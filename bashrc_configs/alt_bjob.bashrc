@@ -26,6 +26,7 @@ bjuniq_queues () {
 # First Section of this deals with !oversubscribed queues
 # Second Section only deals with the oversubscribed queue, this is so it is always last
 #   - and has a longer name field so that we can see the name of the ticket running
+#   - sorts the data by job-id
 bjdata () {
         local name_len="${1:-40}"
         local user_name="${2:-${USER}}"
@@ -59,7 +60,7 @@ bjdata () {
                                                 else if ($3 == "week")          $3 = blue $3 reset
                                                 else if ($3 == "long")          $3 = cyan $3 reset
                                                 print
-                                        }'
+                                        }' | awk 'NR==1{print;next}{print|"sort -k1"}'
                 fi
         done
 
@@ -92,7 +93,7 @@ bjdata () {
                                                 else if ($3 == "week")                  $3 = blue $3 reset
 
                                                 print
-                                        }'
+                                        }' | awk 'NR==1{print;next}{print|"sort -k1"}'
         fi
 }
 
