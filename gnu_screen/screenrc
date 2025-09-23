@@ -1,0 +1,25 @@
+# No startup message from team
+startup_message off
+
+# Vim bindings for moving to windows
+bind l focus right # C-a l goes right
+bind h focus left  # C-a h goes left
+bind k focus up    # C-a k goes up
+bind j focus down  # C-a j goes down
+
+# Highlight current window
+caption always "%{-b ..}%-w%{+b ..}[[%n%f*%t]]%{-}%+w"
+
+# Number and title of screen
+hardstatus string "%S"
+
+# Caption for window in focus
+caption always "%S|%?%F%{-b bc}%:%{-b bb}%?%C|%D|%M %d|%H%?%F%{+u wb}%? %L=%-Lw%45>%{+b by}%n%f*%t%{-}%+Lw%-0<"
+
+# scroll back this far
+defscrollback 30000
+
+# Indicate 256 color screen otherwise its just grey
+term screen-256color
+
+termcapinfo xterm ti@:te@
