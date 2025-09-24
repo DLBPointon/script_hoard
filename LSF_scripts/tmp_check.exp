@@ -1,0 +1,124 @@
+#!/usr/bin/expect -f
+
+set user $env(USER)
+
+# Prompt for password (hidden input) so your not checking a local file, pass is stored for later checks
+stty -echo
+send_user "Password: "
+expect_user -re "(.*)\n"
+set pass $expect_out(1,string)
+stty echo
+send_user "\n"
+
+
+# Generator, so I don't have to type all the node addresses
+proc generate_addresses {x_val max_y max_z} {
+    set addresses {}
+    for {set y 1} {$y <= $max_y} {incr y} {
+        for {set z 1} {$z <= $max_z} {incr z} {
+            lappend addresses "tol-$x_val-$y-$z"
+        }
+    }
+    return $addresses
+}
+
+# Get the node list, max node string is 1-12-4
+set node_array [generate_addresses 1 12 4]
+
+# Function to strip ANSI codes from the command output
+proc strip_ansi {text} {
+    # Remove ANSI escape sequences
+    regsub -all {\x1b\[[0-9;]*[a-zA-Z]} $text "" text
+    # Remove other control sequences like [?2004l and [?2004h
+    regsub -all {\x1b\[\?[0-9]+[lh]} $text "" text
+    # Remove carriage returns and clean up whitespace
+    regsub -all {\r} $text "" text
+
+    # my end of prompt is :$: rather than $ - so you might need to change this for your self
+    regsub {[^\r\n]*\$:*$} $text "" text
+    return [string trim $text]
+}
+
+# Send a copy of the nodes to the output
+set f [open "tmp_file.log" "a"]
+puts $f "\n===== Logging the nodes ======"
+puts $f "$node_array"
+close $f
+
+# For each node, log in, get size of tmp as well as size of data per user in tmp
+# Output data to outfile and logout of node
+
+foreach serverid $node_array {
+    set timeout 10
+
+    # Login and commands happen here WITHOUT log_file active
+    if {[catch {spawn ssh -o StrictHostKeyChecking=no ${user}@${serverid}} spawn_error]} {
+        puts "Failed to spawn SSH to $serverid: $spawn_error"
+        set f [open "tmp_file.log" "a"]
+        puts $f "$serverid: Spawn failed - $spawn_error"
+        close $f
+        continue
+    }
+
+    expect {
+        "*password:"  {
+            send "$pass\r"
+        }
+        "*Could not resolve hostname*" {
+            continue
+        }
+    }
+
+    expect {
+        "*\$*" { }
+        timeout {
+            puts "Login timeout for $serverid - skipping"
+            set f [open "tmp_file.log" "a"]
+            puts $f "$serverid: Login timeout"
+            close $f
+            close
+            continue
+        }
+        "*Could not resolve hostname*" {
+            continue
+        }
+    }
+    # Commands execute here - only capture what we want
+    send "du -hs /tmp 2> >(grep -v 'Permission denied')\r"
+    expect "*\$*"
+    set du_out [strip_ansi $expect_out(buffer)]
+    regsub {du -hs /tmp[^\r\n]*[\r\n]+} $du_out "" du_out
+    set du_out [string trim $du_out]
+
+    send "for user in \$(ls -l /tmp | awk 'NR>1 {print \$3}' | sort -u); do ls -l /tmp | awk -v u=\"\$user\" '\$3==u {sum+=\$5} END {if(sum>0) printf \"User: %s Size: %.6f GB\\n\", u, sum/1e9}'; done\r"
+    set user_results ""
+    set timeout 30
+
+    expect {
+        -re "(User: \[^\r\n\]+)" {
+            append user_results "$expect_out(1,string)\n"
+            exp_continue
+        }
+        "*\$*" {
+            puts "Command completed"
+        }
+        timeout {
+            puts "Command timed out"
+        }
+    }
+
+    # Log results
+    set f [open "tmp_file.log" "a"]
+    puts $f "\n===== Results for $serverid ======"
+    puts $f "TMP USAGE: $du_out"
+    puts $f "User breakdown:"
+    if {$user_results ne ""} {
+        puts $f [string trim $user_results]
+    } else {
+        puts $f "No user files found in /tmp"
+    }
+    close $f
+
+    send "exit\r"
+    expect eof
+}
